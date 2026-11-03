@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { RouterView, useRoute, useRouter } from 'vue-router';
+import { RouterView, useRoute } from 'vue-router';
 import { clearToken, loadConfig, loadMe, logout, store } from '../store';
 
 const route = useRoute();
-const router = useRouter();
 
 /** 侧边栏折叠状态，记在本地，换设备互不影响 */
 const COLLAPSE_KEY = 'henna.sidebar.collapsed';
@@ -14,17 +13,47 @@ function toggleSidebar() {
   localStorage.setItem(COLLAPSE_KEY, collapsed.value ? '1' : '0');
 }
 
+/**
+ * 侧栏宽度：默认 180px（比原来的 208px 再窄一点），拖右侧分界线可改，
+ * 150~320px 之间，记在本地，刷新后还保持你拖过的宽度。
+ */
+const SIDEBAR_WIDTH_KEY = 'henna.sidebar.width';
+const clampPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+function readSidebarWidth() {
+  const v = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  return Number.isFinite(v) && v > 0 ? clampPx(v, 150, 320) : 180;
+}
+const sidebarWidth = ref(readSidebarWidth());
+const sidebarResizing = ref(false);
+function startSidebarDrag(e: PointerEvent) {
+  const startX = e.clientX;
+  const startW = sidebarWidth.value;
+  sidebarResizing.value = true;
+  const move = (ev: PointerEvent) => {
+    sidebarWidth.value = clampPx(startW + (ev.clientX - startX), 150, 320);
+  };
+  const up = () => {
+    sidebarResizing.value = false;
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth.value));
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+
 const isAdmin = computed(() => store.me?.role === 'admin');
 
 /**
  * 导航项按角色区分。
- * 普通用户只给「收件箱 / 写信 / 账户设置」三样 —— 邮箱地址、服务商、
- * 规则、日志这些都是站点级的运维入口，不该暴露给普通用户。
+ * 普通用户只给「收件箱 / 写信」两样加左下角的「账户设置」——邮箱地址、
+ * 服务商、规则、日志这些都是站点级的运维入口，不该暴露给普通用户。
  * 后端对管理接口另有 adminOnly 中间件，这里只是收窄入口。
  */
-const navs = computed(() => [
+// 侧栏顺序：写信在收件箱上面（桌面侧栏与移动端横向导航共用同一数组，顺序同步改）
+const navs = computed((): { to: string; label: string; icon: string; primary?: boolean }[] => [
+  { to: '/compose', label: '写信', icon: 'send', primary: true },
   { to: '/', label: '收件箱', icon: 'inbox' },
-  { to: '/compose', label: '写信', icon: 'send' },
   /*
    * 管理项合并后只剩三个入口：
    *   全部收件箱 / 邮箱（地址+日志+分析）/ 站点管理（服务商+规则+用户+系统）
@@ -38,8 +67,12 @@ const navs = computed(() => [
         { to: '/manage', label: '站点管理', icon: 'sliders' },
       ]
     : []),
-  { to: '/settings', label: '账户设置', icon: 'gear' },
+  // 账户设置不在主导航里，单独放左下角（见侧栏底部），移动端仍放在横向导航末尾
 ]);
+
+/** 左下角的账户设置入口（桌面侧栏底部 + 移动端横向导航末尾共用） */
+const settingsNav = { to: '/settings', label: '账户设置', icon: 'gear' };
+const mobileNavs = computed(() => [...navs.value, settingsNav]);
 
 onMounted(async () => {
   await loadConfig();
@@ -51,9 +84,6 @@ onMounted(async () => {
     location.replace('/login');
   }
 });
-
-/** 写信页自己有「发送」，右下角按钮只在别的页面出现 */
-const showComposeFab = computed(() => route.path !== '/compose');
 
 const paths: Record<string, string> = {
   inbox: 'M4 13h4l2 3h4l2-3h4M4 13l4-7h8l4 7v6H4v-6z',
@@ -78,7 +108,8 @@ const paths: Record<string, string> = {
     <!-- 侧边栏（桌面，可折叠） -->
     <aside
       class="hidden shrink-0 flex-col border-r border-sand-200 bg-white transition-[width] duration-200 md:flex"
-      :class="collapsed ? 'w-[68px]' : 'w-60'"
+      :class="sidebarResizing ? 'duration-0' : ''"
+      :style="collapsed ? { width: '68px' } : { width: sidebarWidth + 'px' }"
     >
       <!-- 头部：logo + 折叠按钮 -->
       <div class="flex items-center gap-2.5 px-4 py-5" :class="collapsed ? 'justify-center px-2' : ''">
@@ -95,13 +126,27 @@ const paths: Record<string, string> = {
           :key="n.to"
           :to="n.to"
           class="nav-item"
-          :class="{ 'nav-item-active': route.path === n.to, 'justify-center !px-0': collapsed }"
+          :class="{
+            'nav-item-active': route.path === n.to && !n.primary,
+            'justify-center !px-0': collapsed,
+            '!bg-henna-500 !text-white hover:!bg-henna-600': n.primary,
+            // 绿底写信按钮里的“+ 写信”居中显示（折叠时本来就是居中的图标）
+            'justify-center': n.primary,
+          }"
+          :style="n.primary ? 'color: var(--brand-on, #fff)' : undefined"
          :title="collapsed ? n.label : undefined"
         >
-          <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg
+            v-if="!n.primary || collapsed"
+            viewBox="0 0 24 24"
+            class="h-4 w-4 shrink-0"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+          >
             <path :d="paths[n.icon]" stroke-linecap="round" />
           </svg>
-          <span v-if="!collapsed">{{ n.label }}</span>
+          <span v-if="!collapsed">{{ n.primary ? '+ 写信' : n.label }}</span>
         </RouterLink>
       </nav>
 
@@ -118,6 +163,21 @@ const paths: Record<string, string> = {
           </svg>
           <span v-if="!collapsed">收起侧边栏</span>
         </button>
+      </div>
+
+      <!-- 账户设置：挪到左下角，用户信息上面 -->
+      <div class="border-t border-sand-200 p-2">
+        <RouterLink
+          to="/settings"
+          class="nav-item w-full"
+          :class="{ 'nav-item-active': route.path === '/settings', 'justify-center !px-0': collapsed }"
+          :title="collapsed ? '账户设置' : undefined"
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path :d="paths.gear" stroke-linecap="round" />
+          </svg>
+          <span v-if="!collapsed">账户设置</span>
+        </RouterLink>
       </div>
 
       <div class="border-t border-sand-200 p-3">
@@ -139,6 +199,14 @@ const paths: Record<string, string> = {
       </div>
     </aside>
 
+    <!-- 侧栏与中间栏之间的可拖分界线：拖动改侧栏宽度（仅桌面端、未折叠时） -->
+    <div
+      v-if="!collapsed"
+      class="hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
+      title="拖动调整侧栏宽度"
+      @pointerdown="startSidebarDrag"
+    ></div>
+
     <!-- 主区 -->
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- 移动端顶栏 -->
@@ -158,13 +226,19 @@ const paths: Record<string, string> = {
       <!-- 移动端横向导航 -->
       <nav class="flex gap-1 overflow-x-auto border-b border-sand-200 bg-white px-2 py-2 md:hidden">
         <RouterLink
-          v-for="n in navs"
+          v-for="n in mobileNavs"
           :key="n.to"
           :to="n.to"
           class="shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-ink-500"
-          :class="route.path === n.to ? 'bg-henna-50 text-henna-600' : 'hover:bg-sand-100'"
+          :class="
+            n.primary
+              ? 'bg-henna-500 text-white'
+              : route.path === n.to
+                ? 'bg-henna-50 text-henna-600'
+                : 'hover:bg-sand-100'
+          "
         >
-          {{ n.label }}
+          {{ n.primary ? '+ 写信' : n.label }}
         </RouterLink>
       </nav>
 
@@ -173,18 +247,5 @@ const paths: Record<string, string> = {
       </main>
     </div>
 
-    <!-- 右下角写信按钮（Gmail 风格） -->
-    <button
-      v-if="showComposeFab"
-      class="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-henna-500 px-4 py-3 text-sm font-medium shadow-lg transition hover:bg-henna-600 active:bg-henna-700 md:bottom-8 md:right-8"
-      style="color: var(--brand-on, #fff)"
-      title="写信"
-      @click="router.push('/compose')"
-    >
-      <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 5v14M5 12h14" stroke-linecap="round" />
-      </svg>
-      <span class="hidden sm:inline">写信</span>
-    </button>
   </div>
 </template>
