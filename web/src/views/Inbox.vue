@@ -16,7 +16,10 @@ const loading = ref(false);
 async function load() {
   loading.value = true;
   try {
-    const qs = new URLSearchParams({ box: box.value, q: q.value });
+    const qs = new URLSearchParams({ box: box.value, q: q.value, scope: 'all' });
+    // 收件箱对管理员聚合全站：scope=all 仅管理员生效（后端已校验），
+    // 普通用户传了也只返回自己的，不会越权。管理员点收件箱即可看到
+    // 所有创建的邮箱收到的信，不必再去翻每个邮箱。
     if (starOnly.value) qs.set('star', '1');
     items.value = await api.get<MailItem[]>(`/message?${qs}`);
   } catch (e) {
@@ -131,7 +134,9 @@ onMounted(load);
             <span class="shrink-0 text-[11px] text-ink-500">{{ fmtTime(m.created_at) }}</span>
           </div>
           <div class="mt-0.5 truncate text-sm text-ink-700">{{ m.subject || '(无主题)' }}</div>
+          <div class="mt-0.5 truncate text-xs text-ink-500">{{ m.snippet ? m.snippet : '(无正文)' }}</div>
           <div class="mt-1 flex items-center gap-2 text-[11px] text-ink-500">
+            <span v-if="box === 'in'">收件 {{ m.to_addr }}</span>
             <span>{{ fmtSize(m.size) }}</span>
             <span v-if="m.is_star" class="text-clay-500">★ 星标</span>
             <span v-if="!m.is_read" class="chip-warn">未读</span>
