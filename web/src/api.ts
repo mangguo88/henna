@@ -80,6 +80,8 @@ export interface MailItem {
   is_star: number;
   size: number;
   created_at: number;
+  /** 列表接口返回的正文摘要：正文前 10 个字（HTML 已剥离），无正文时为空串 */
+  snippet?: string;
   /** 仅 scope=all（管理员）时返回，标明这封邮件属于谁 */
   owner?: string;
 }
