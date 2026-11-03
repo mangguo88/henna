@@ -149,8 +149,10 @@ onMounted(load);
             <span class="shrink-0 text-[11px] text-ink-500">{{ fmtTime(m.created_at) }}</span>
           </div>
           <div class="mt-0.5 truncate text-sm text-ink-700">{{ m.subject || '(无主题)' }}</div>
+          <div class="mt-0.5 truncate text-xs text-ink-500">{{ m.snippet ? m.snippet : '(无正文)' }}</div>
           <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-ink-500">
             <span class="chip-plain">{{ m.owner ?? '—' }}</span>
+            <span v-if="box === 'in'">收件 {{ m.to_addr }}</span>
             <span>{{ fmtSize(m.size) }}</span>
             <span v-if="m.is_star" class="text-clay-500">★</span>
             <span v-if="!m.is_read" class="chip-warn">未读</span>
