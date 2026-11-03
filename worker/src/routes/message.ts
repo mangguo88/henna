@@ -32,6 +32,31 @@ interface MessageRow {
  * 这既不符合「收件箱」的直觉，也让管理员自己找不到自己的信。
  * 要看全部走 scope=all（仅管理员，且只在单独的「全部收件箱」页用）。
  */
+
+/**
+ * 正文摘要：取正文前 10 个字。
+ * 优先用纯文本；只有 HTML 时先去掉 script/style 再剥标签、解常见实体、
+ * 压空白，最后按字符（非 UTF-16 码元，避免 emoji 被切一半）取前 10 字。
+ * 列表接口只回这个摘要，不回全文，列表不会因此变慢。
+ */
+function toSnippet(row: MessageRow): string {
+  let text = row.text_body ?? '';
+  if (!text && row.html_body) {
+    text = row.html_body
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ');
+  }
+  text = text
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+  return Array.from(text.replace(/\s+/g, ' ').trim()).slice(0, 10).join('');
+}
+
 message.get('/', authRequired, async (c) => {
   const user = c.get('user');
   const boxRaw = c.req.query('box') ?? 'in';
@@ -44,8 +69,8 @@ message.get('/', authRequired, async (c) => {
   const all = c.req.query('scope') === 'all' && user.role === 'admin';
 
   let sql = all
-    ? 'SELECT m.id, m.user_id, m.address_id, m.direction, m.from_addr, m.from_name, m.to_addr, m.subject, m.is_read, m.is_star, m.size, m.created_at, u.email AS owner FROM mail_message m LEFT JOIN user u ON u.id = m.user_id WHERE m.direction = ?'
-    : 'SELECT id, user_id, address_id, direction, from_addr, from_name, to_addr, subject, is_read, is_star, size, created_at FROM mail_message WHERE direction = ? AND user_id = ?';
+    ? 'SELECT m.id, m.user_id, m.address_id, m.direction, m.from_addr, m.from_name, m.to_addr, m.subject, m.text_body, m.html_body, m.is_read, m.is_star, m.size, m.created_at, u.email AS owner FROM mail_message m LEFT JOIN user u ON u.id = m.user_id WHERE m.direction = ?'
+    : 'SELECT id, user_id, address_id, direction, from_addr, from_name, to_addr, subject, text_body, html_body, is_read, is_star, size, created_at FROM mail_message WHERE direction = ? AND user_id = ?';
   const args: unknown[] = [box];
   if (!all) args.push(user.id);
 
@@ -62,7 +87,14 @@ message.get('/', authRequired, async (c) => {
   args.push(limit, offset);
 
   const rows = await qAll<MessageRow & { owner?: string }>(c.env.DB, sql, ...args);
-  return c.json(ok(rows));
+  // 只把摘要发给前端，正文全文不进列表响应
+  const items = rows.map((r) => {
+    const item = { ...r, snippet: toSnippet(r) };
+    delete (item as Partial<MessageRow>).text_body;
+    delete (item as Partial<MessageRow>).html_body;
+    return item;
+  });
+  return c.json(ok(items));
 });
 
 message.get('/:id', authRequired, async (c) => {
