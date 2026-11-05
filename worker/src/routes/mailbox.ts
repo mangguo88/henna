@@ -13,6 +13,7 @@ interface AddressRow {
   user_id: number;
   address: string;
   domain: string;
+  display_name: string | null;
   enabled: number;
   created_at: number;
 }
@@ -96,14 +97,35 @@ mailbox.post('/batch', authRequired, async (c) => {
   return c.json(ok({ created }));
 });
 
+/**
+ * 改邮箱：开关 / 显示名称 / 转移给另一位用户。
+ * 显示名称只影响侧栏列表里显示的名字，不改地址本身。
+ * 转移仅管理员可用：只改地址归属，新邮件归新用户；旧邮件仍留在原用户的收件箱里。
+ */
 mailbox.put('/:id', authRequired, async (c) => {
   const user = c.get('user');
   const id = Number(c.req.param('id'));
-  const { enabled } = (await c.req.json().catch(() => ({}))) as { enabled?: number };
+  const { enabled, display_name, owner_id } = (await c.req.json().catch(() => ({}))) as {
+    enabled?: number;
+    display_name?: string | null;
+    owner_id?: number;
+  };
   const row = await qOne<AddressRow>(c.env.DB, 'SELECT * FROM mail_address WHERE id = ?', id);
   if (!row) throw new HttpError('地址不存在', 404);
   if (user.role !== 'admin' && row.user_id !== user.id) throw new HttpError('无权操作', 403);
-  await exec(c.env.DB, 'UPDATE mail_address SET enabled = ? WHERE id = ?', enabled ?? row.enabled, id);
+  if (enabled !== undefined) {
+    await exec(c.env.DB, 'UPDATE mail_address SET enabled = ? WHERE id = ?', enabled ? 1 : 0, id);
+  }
+  if (display_name !== undefined) {
+    const name = String(display_name ?? '').trim().slice(0, 50);
+    await exec(c.env.DB, 'UPDATE mail_address SET display_name = ? WHERE id = ?', name || null, id);
+  }
+  if (owner_id !== undefined) {
+    if (user.role !== 'admin') throw new HttpError('只有管理员可以转移邮箱', 403);
+    const target = await qOne<{ id: number }>(c.env.DB, 'SELECT id FROM user WHERE id = ?', Number(owner_id));
+    if (!target) throw new HttpError('目标用户不存在', 404);
+    await exec(c.env.DB, 'UPDATE mail_address SET user_id = ? WHERE id = ?', Number(owner_id), id);
+  }
   return c.json(ok({ updated: true }));
 });
 
