@@ -128,6 +128,8 @@ function onListMqChange(e: MediaQueryListEvent) {
   isDesktop.value = e.matches;
 }
 function startListDrag(e: PointerEvent) {
+  // 列表收起时分界线只剩箭头，拖动无效，点箭头展开
+  if (listCollapsed.value) return;
   const startX = e.clientX;
   const startW = listWidth.value;
   const move = (ev: PointerEvent) => {
@@ -141,7 +143,18 @@ function startListDrag(e: PointerEvent) {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
 }
-const listStyle = computed(() => (isDesktop.value ? { width: `${listWidth.value}px` } : {}));
+/** 列表折叠：点分界线上的箭头收起/展开，宽度记在本地，展开恢复原来宽度 */
+const LIST_COLLAPSED_KEY = 'henna.list.collapsed';
+const listCollapsed = ref(localStorage.getItem(LIST_COLLAPSED_KEY) === '1');
+function toggleListCollapsed() {
+  listCollapsed.value = !listCollapsed.value;
+  localStorage.setItem(LIST_COLLAPSED_KEY, listCollapsed.value ? '1' : '0');
+}
+const listStyle = computed(() => {
+  if (!isDesktop.value) return {};
+  if (listCollapsed.value) return { width: '0px' };
+  return { width: `${listWidth.value}px` };
+});
 
 onMounted(() => {
   listMq = window.matchMedia('(min-width: 768px)');
@@ -156,7 +169,7 @@ onMounted(load);
 <template>
   <div class="flex h-full">
     <!-- 列表 -->
-    <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :style="listStyle">
+    <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :class="listCollapsed ? 'overflow-hidden' : ''" :style="listStyle">
       <div class="border-b border-sand-200 bg-white px-4 py-3">
         <div class="flex items-center gap-2">
           <div class="flex gap-1 rounded-lg bg-sand-100 p-1">
@@ -231,13 +244,24 @@ onMounted(load);
     </section>
 
     <!-- 详情 -->
-    <!-- 列表与详情之间的可拖分界线：拖动改列表宽度（仅桌面端） -->
+    <!-- 列表与详情之间的分界线：拖动改列表宽度，点中间的箭头收起/展开列表（仅桌面端；收起后箭头还留在这里，点一下就展开） -->
     <div
       v-if="isDesktop"
-      class="hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
+      class="relative hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
       title="拖动调整列表宽度"
       @pointerdown="startListDrag"
-    ></div>
+    >
+      <button
+        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        :title="listCollapsed ? '展开列表' : '收起列表'"
+        @click.stop="toggleListCollapsed"
+        @pointerdown.stop
+      >
+        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path :d="listCollapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
     <section class="hidden min-w-0 flex-1 flex-col md:flex">
       <div v-if="!detail" class="grid flex-1 place-items-center px-6 text-center text-sm text-ink-500">
         <div>
