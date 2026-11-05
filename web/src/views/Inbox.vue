@@ -130,7 +130,7 @@ function startListDrag(e: PointerEvent) {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
 }
-/** 列表折叠：点分界线上的箭头收起/展开，收起后留 20px（约一个字宽），不与前面的边线重合；宽度记在本地，展开恢复原来宽度 */
+/** 列表折叠：点分界线上的箭头收起/展开，收起后留 14px、内容不渲染，不露半个字、不与前面的边线重合；宽度记在本地，展开恢复原来宽度 */
 const LIST_COLLAPSED_KEY = 'henna.list.collapsed';
 const listCollapsed = ref(localStorage.getItem(LIST_COLLAPSED_KEY) === '1');
 function toggleListCollapsed() {
@@ -139,7 +139,7 @@ function toggleListCollapsed() {
 }
 const listStyle = computed(() => {
   if (!isDesktop.value) return {};
-  if (listCollapsed.value) return { width: '20px' };
+  if (listCollapsed.value) return { width: '14px' };
   return { width: `${listWidth.value}px` };
 });
 
@@ -160,7 +160,7 @@ onMounted(load);
     <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :class="listCollapsed ? 'overflow-hidden' : ''" :style="listStyle">
       <!-- 表头分两行：第一行页签+星标，第二行搜索框独占一行；
            原来三样挤在一行时列表里搜索框会被压窄、占位文字溢出到框外 -->
-      <div class="border-b border-sand-200 bg-white px-4 py-3">
+      <div v-if="!listCollapsed" class="border-b border-sand-200 bg-white px-4 py-3">
         <div class="flex items-center gap-2">
         <div class="flex gap-1 rounded-lg bg-sand-100 p-1">
           <button
@@ -196,7 +196,7 @@ onMounted(load);
         <input v-model="q" class="input mt-2 w-full !py-1.5 text-xs" placeholder="搜索主题 / 地址" @keyup.enter="load" />
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <div v-if="!listCollapsed" class="min-h-0 flex-1 overflow-y-auto">
         <div v-if="!items.length && !loading" class="p-8 text-center">
           <svg viewBox="0 0 24 24" class="mx-auto h-12 w-12 text-sand-300" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M3 7h18v10H3z" /><path d="M3 7l9 6 9-6" />
@@ -237,12 +237,12 @@ onMounted(load);
       @pointerdown="startListDrag"
     >
       <button
-        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        class="absolute left-1/2 top-1/2 z-10 grid h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-henna-200 bg-white text-henna-600 shadow-sm hover:bg-henna-50 hover:text-henna-700"
         :title="listCollapsed ? '展开列表' : '收起列表'"
         @click.stop="toggleListCollapsed"
         @pointerdown.stop
       >
-        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg viewBox="0 0 24 24" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2.5">
           <path :d="listCollapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
