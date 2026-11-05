@@ -95,29 +95,18 @@ async function loadMailboxes() {
     mailboxes.value = [];
   }
 }
-/** 邮箱列表默认收起：只留标题行，点标题才展开看创建的邮箱，选择记在本地 */
-const MAILBOX_LIST_KEY = 'henna.mailboxList.expanded';
+/** 邮箱列表默认关闭：只留标题行，点标题才展开看创建的邮箱；进邮箱后也不自动展开，选择记在本地 */
+const MAILBOX_LIST_KEY = 'henna.mailboxList.open';
 const mailboxListExpanded = ref(localStorage.getItem(MAILBOX_LIST_KEY) === '1');
 function toggleMailboxList() {
   mailboxListExpanded.value = !mailboxListExpanded.value;
   localStorage.setItem(MAILBOX_LIST_KEY, mailboxListExpanded.value ? '1' : '0');
 }
-// 正在某个邮箱里时自动展开，让当前邮箱看得见
-function syncMailboxListExpanded() {
-  if (route.name === 'mailbox') {
-    mailboxListExpanded.value = true;
-    localStorage.setItem(MAILBOX_LIST_KEY, '1');
-  }
-}
-onMounted(() => {
-  loadMailboxes();
-  syncMailboxListExpanded();
-});
+onMounted(loadMailboxes);
 watch(
   () => route.path,
   () => {
     loadMailboxes();
-    syncMailboxListExpanded();
   },
 );
 function isCurrentMailbox(a: Address) {
