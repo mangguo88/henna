@@ -279,10 +279,10 @@ const paths: Record<string, string> = {
           <span v-if="!collapsed">{{ n.primary ? '+ ' + n.label : n.label }}</span>
         </RouterLink>
 
-        <!-- 邮箱列表：+写信下面一栏，默认收起只留标题行，点标题展开看创建的邮箱（折叠时隐藏） -->
-        <div v-if="!collapsed" class="pt-2">
+        <!-- 邮箱列表：+写信下面一栏，默认关闭只留标题行，点标题展开看创建的邮箱（折叠时隐藏）；收起时标题行直接贴着下面导航，不留空 -->
+        <div v-if="!collapsed">
           <!-- 和下面收件箱同一格式的导航行：图标 + 名称，点一下展开/收起邮箱列表 -->
-          <button class="nav-item mb-1 w-full" :title="mailboxListExpanded ? '收起邮箱列表' : '展开邮箱列表'" @click="toggleMailboxList">
+          <button class="nav-item w-full" :class="{ 'mb-1': mailboxListExpanded }" :title="mailboxListExpanded ? '收起邮箱列表' : '展开邮箱列表'" @click="toggleMailboxList">
             <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8">
               <path :d="paths.inbox" stroke-linecap="round" />
             </svg>
