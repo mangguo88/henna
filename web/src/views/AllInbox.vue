@@ -143,7 +143,7 @@ function startListDrag(e: PointerEvent) {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
 }
-/** 列表折叠：点分界线上的箭头收起/展开，宽度记在本地，展开恢复原来宽度 */
+/** 列表折叠：点分界线上的箭头收起/展开，收起后留 20px（约一个字宽），不与前面的边线重合；宽度记在本地，展开恢复原来宽度 */
 const LIST_COLLAPSED_KEY = 'henna.list.collapsed';
 const listCollapsed = ref(localStorage.getItem(LIST_COLLAPSED_KEY) === '1');
 function toggleListCollapsed() {
@@ -152,7 +152,7 @@ function toggleListCollapsed() {
 }
 const listStyle = computed(() => {
   if (!isDesktop.value) return {};
-  if (listCollapsed.value) return { width: '0px' };
+  if (listCollapsed.value) return { width: '20px' };
   return { width: `${listWidth.value}px` };
 });
 
