@@ -2,7 +2,7 @@
 /**
  * 进入邮箱：只看这一个邮箱的信。
  *
- * 左边是这个邮箱的文件夹（收件箱 / 星标 / 已发送 / 草稿箱 / 垃圾邮件），
+ * 左边是这个邮箱的文件夹（收件箱 / 垃圾邮件 / 星标 / 已发送 / 草稿箱），
  * 中间是邮件列表，右边点开看正文 —— 和参考的邮箱产品同一个排法。
  * 列表只按 mailbox 参数过滤，后端会校验归属：普通用户只能进自己的邮箱。
  */
@@ -19,10 +19,10 @@ const addr = computed(() => decodeURIComponent(String(route.params.addr ?? '')))
 type Folder = 'in' | 'star' | 'out' | 'draft' | 'spam';
 const folders: { key: Folder; label: string }[] = [
   { key: 'in', label: '收件箱' },
+  { key: 'spam', label: '垃圾邮件' },
   { key: 'star', label: '星标邮件' },
   { key: 'out', label: '已发送' },
   { key: 'draft', label: '草稿箱' },
-  { key: 'spam', label: '垃圾邮件' },
 ];
 const folder = ref<Folder>('in');
 const folderLabel = computed(() => folders.find((f) => f.key === folder.value)?.label ?? '收件箱');
@@ -151,6 +151,8 @@ function onListMqChange(e: MediaQueryListEvent) {
   isDesktop.value = e.matches;
 }
 function startListDrag(e: PointerEvent) {
+  // 列表收起时分界线只剩箭头，拖动无效，点箭头展开
+  if (listCollapsed.value) return;
   const startX = e.clientX;
   const startW = listWidth.value;
   const move = (ev: PointerEvent) => {
@@ -164,7 +166,57 @@ function startListDrag(e: PointerEvent) {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
 }
-const listStyle = computed(() => (isDesktop.value ? { width: `${listWidth.value}px` } : {}));
+/** 列表折叠：点分界线上的箭头收起/展开，宽度记在本地，展开恢复原来宽度 */
+const LIST_COLLAPSED_KEY = 'henna.list.collapsed';
+const listCollapsed = ref(localStorage.getItem(LIST_COLLAPSED_KEY) === '1');
+function toggleListCollapsed() {
+  listCollapsed.value = !listCollapsed.value;
+  localStorage.setItem(LIST_COLLAPSED_KEY, listCollapsed.value ? '1' : '0');
+}
+/**
+ * 文件夹栏宽：默认 170px，拖右侧分界线可改（140~260px），记在本地；
+ * 点分界线上的箭头收起/展开，展开恢复原来宽度。
+ */
+const FOLDER_WIDTH_KEY = 'henna.folder.width';
+const FOLDER_COLLAPSED_KEY = 'henna.folder.collapsed';
+const clampFolderPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+function readFolderWidth() {
+  const v = Number(localStorage.getItem(FOLDER_WIDTH_KEY));
+  return Number.isFinite(v) && v > 0 ? clampFolderPx(v, 140, 260) : 170;
+}
+const folderWidth = ref(readFolderWidth());
+const folderCollapsed = ref(localStorage.getItem(FOLDER_COLLAPSED_KEY) === '1');
+function toggleFolderCollapsed() {
+  folderCollapsed.value = !folderCollapsed.value;
+  localStorage.setItem(FOLDER_COLLAPSED_KEY, folderCollapsed.value ? '1' : '0');
+}
+function startFolderDrag(e: PointerEvent) {
+  // 文件夹收起时分界线只剩箭头，拖动无效，点箭头展开
+  if (folderCollapsed.value) return;
+  const startX = e.clientX;
+  const startW = folderWidth.value;
+  const move = (ev: PointerEvent) => {
+    folderWidth.value = clampFolderPx(startW + (ev.clientX - startX), 140, 260);
+  };
+  const up = () => {
+    localStorage.setItem(FOLDER_WIDTH_KEY, String(folderWidth.value));
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+const folderStyle = computed(() => {
+  if (!isDesktop.value) return {};
+  if (folderCollapsed.value) return { width: '0px' };
+  return { width: `${folderWidth.value}px` };
+});
+
+const listStyle = computed(() => {
+  if (!isDesktop.value) return {};
+  if (listCollapsed.value) return { width: '0px' };
+  return { width: `${listWidth.value}px` };
+});
 
 onMounted(() => {
   listMq = window.matchMedia('(min-width: 768px)');
@@ -189,7 +241,7 @@ watch(
 <template>
   <div class="flex h-full">
     <!-- 文件夹栏（桌面端） -->
-    <aside class="hidden w-[170px] shrink-0 flex-col border-r border-sand-200 bg-white md:flex">
+    <aside class="hidden shrink-0 flex-col border-r border-sand-200 bg-white md:flex" :class="folderCollapsed ? 'overflow-hidden' : ''" :style="folderStyle">
       <div class="border-b border-sand-200 px-4 py-3">
         <RouterLink to="/" class="text-xs text-ink-500 hover:text-henna-600">‹ 返回收件箱</RouterLink>
         <div class="mt-1 truncate text-sm font-semibold text-ink-900" :title="addr">{{ addr }}</div>
@@ -207,8 +259,27 @@ watch(
       </nav>
     </aside>
 
+    <!-- 文件夹与列表之间的分界线：拖动改文件夹宽度，点中间的箭头收起/展开文件夹（仅桌面端；收起后箭头还留在这里，点一下就展开） -->
+    <div
+      v-if="isDesktop"
+      class="relative hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
+      title="拖动调整文件夹宽度"
+      @pointerdown="startFolderDrag"
+    >
+      <button
+        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        :title="folderCollapsed ? '展开文件夹' : '收起文件夹'"
+        @click.stop="toggleFolderCollapsed"
+        @pointerdown.stop
+      >
+        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path :d="folderCollapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
+
     <!-- 列表 -->
-    <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :style="listStyle">
+    <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :class="listCollapsed ? 'overflow-hidden' : ''" :style="listStyle">
       <!-- 手机端文件夹：横向滑动的一排小药丸 -->
       <div class="flex gap-1 overflow-x-auto border-b border-sand-200 bg-white px-2 py-2 md:hidden">
         <button
@@ -259,13 +330,24 @@ watch(
       </div>
     </section>
 
-    <!-- 列表与详情之间的可拖分界线：拖动改列表宽度（仅桌面端） -->
+    <!-- 列表与详情之间的分界线：拖动改列表宽度，点中间的箭头收起/展开列表（仅桌面端；收起后箭头还留在这里，点一下就展开） -->
     <div
       v-if="isDesktop"
-      class="hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
+      class="relative hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
       title="拖动调整列表宽度"
       @pointerdown="startListDrag"
-    ></div>
+    >
+      <button
+        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        :title="listCollapsed ? '展开列表' : '收起列表'"
+        @click.stop="toggleListCollapsed"
+        @pointerdown.stop
+      >
+        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path :d="listCollapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
 
     <!-- 详情：点邮件后在这里看正文 -->
     <section class="hidden min-w-0 flex-1 flex-col md:flex">
