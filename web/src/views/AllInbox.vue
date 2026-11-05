@@ -113,13 +113,13 @@ const emptyText = computed(() => {
 watch([box, starOnly], load);
 /**
  * 列表栏宽：默认 280px（比原来的 320px 再窄一点），拖右侧分界线可改，
- * 240~520px 之间，记在本地。手机端不生效，列表仍占满屏。
+ * 150~520px 之间，最小 150px 刚好露出「收件箱」，记在本地。手机端不生效，列表仍占满屏。
  */
 const LIST_WIDTH_KEY = 'henna.list.width';
 const clampListPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 function readListWidth() {
   const v = Number(localStorage.getItem(LIST_WIDTH_KEY));
-  return Number.isFinite(v) && v > 0 ? clampListPx(v, 240, 520) : 280;
+  return Number.isFinite(v) && v > 0 ? clampListPx(v, 150, 520) : 280;
 }
 const listWidth = ref(readListWidth());
 const isDesktop = ref(false);
@@ -133,7 +133,7 @@ function startListDrag(e: PointerEvent) {
   const startX = e.clientX;
   const startW = listWidth.value;
   const move = (ev: PointerEvent) => {
-    listWidth.value = clampListPx(startW + (ev.clientX - startX), 240, 520);
+    listWidth.value = clampListPx(startW + (ev.clientX - startX), 150, 520);
   };
   const up = () => {
     localStorage.setItem(LIST_WIDTH_KEY, String(listWidth.value));
