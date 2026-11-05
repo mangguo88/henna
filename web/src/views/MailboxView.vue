@@ -142,7 +142,7 @@ const LIST_WIDTH_KEY = 'henna.list.width';
 const clampListPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 function readListWidth() {
   const v = Number(localStorage.getItem(LIST_WIDTH_KEY));
-  return Number.isFinite(v) && v > 0 ? clampListPx(v, 240, 520) : 280;
+  return Number.isFinite(v) && v > 0 ? clampListPx(v, 150, 520) : 280;
 }
 const listWidth = ref(readListWidth());
 const isDesktop = ref(false);
@@ -156,7 +156,7 @@ function startListDrag(e: PointerEvent) {
   const startX = e.clientX;
   const startW = listWidth.value;
   const move = (ev: PointerEvent) => {
-    listWidth.value = clampListPx(startW + (ev.clientX - startX), 240, 520);
+    listWidth.value = clampListPx(startW + (ev.clientX - startX), 150, 520);
   };
   const up = () => {
     localStorage.setItem(LIST_WIDTH_KEY, String(listWidth.value));
@@ -174,7 +174,7 @@ function toggleListCollapsed() {
   localStorage.setItem(LIST_COLLAPSED_KEY, listCollapsed.value ? '1' : '0');
 }
 /**
- * 文件夹栏宽：默认 170px，拖右侧分界线可改（140~260px），记在本地；
+ * 文件夹栏宽：默认 170px，拖右侧分界线可改（100~260px），最小 100px 刚好露出「收件箱」，记在本地；
  * 点分界线上的箭头收起/展开，展开恢复原来宽度。
  */
 const FOLDER_WIDTH_KEY = 'henna.folder.width';
@@ -182,7 +182,7 @@ const FOLDER_COLLAPSED_KEY = 'henna.folder.collapsed';
 const clampFolderPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 function readFolderWidth() {
   const v = Number(localStorage.getItem(FOLDER_WIDTH_KEY));
-  return Number.isFinite(v) && v > 0 ? clampFolderPx(v, 140, 260) : 170;
+  return Number.isFinite(v) && v > 0 ? clampFolderPx(v, 100, 260) : 170;
 }
 const folderWidth = ref(readFolderWidth());
 const folderCollapsed = ref(localStorage.getItem(FOLDER_COLLAPSED_KEY) === '1');
@@ -196,7 +196,7 @@ function startFolderDrag(e: PointerEvent) {
   const startX = e.clientX;
   const startW = folderWidth.value;
   const move = (ev: PointerEvent) => {
-    folderWidth.value = clampFolderPx(startW + (ev.clientX - startX), 140, 260);
+    folderWidth.value = clampFolderPx(startW + (ev.clientX - startX), 100, 260);
   };
   const up = () => {
     localStorage.setItem(FOLDER_WIDTH_KEY, String(folderWidth.value));
