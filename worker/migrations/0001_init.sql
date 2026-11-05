@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS mail_address (
   user_id    INTEGER NOT NULL,
   address    TEXT NOT NULL UNIQUE,
   domain     TEXT NOT NULL,
+  display_name TEXT,
   enabled    INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS mail_message (
   html_body  TEXT,
   is_read    INTEGER NOT NULL DEFAULT 0,
   is_star    INTEGER NOT NULL DEFAULT 0,
+  is_spam    INTEGER NOT NULL DEFAULT 0,
   size       INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
