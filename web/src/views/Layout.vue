@@ -16,14 +16,14 @@ function toggleSidebar() {
 }
 
 /**
- * 侧栏宽度：默认 180px（比原来的 208px 再窄一点），拖右侧分界线可改，
- * 150~320px 之间，记在本地，刷新后还保持你拖过的宽度。
+ * 侧栏宽度：默认 200px，拖右侧分界线可改，170~320px 之间，
+ * 170px 是「邮箱列表」那一行能完整显示的最小宽度，记在本地，刷新后还保持你拖过的宽度。
  */
 const SIDEBAR_WIDTH_KEY = 'henna.sidebar.width';
 const clampPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 function readSidebarWidth() {
   const v = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-  return Number.isFinite(v) && v > 0 ? clampPx(v, 150, 320) : 180;
+  return Number.isFinite(v) && v > 0 ? clampPx(v, 170, 320) : 200;
 }
 const sidebarWidth = ref(readSidebarWidth());
 const sidebarResizing = ref(false);
@@ -34,7 +34,7 @@ function startSidebarDrag(e: PointerEvent) {
   const startW = sidebarWidth.value;
   sidebarResizing.value = true;
   const move = (ev: PointerEvent) => {
-    sidebarWidth.value = clampPx(startW + (ev.clientX - startX), 150, 320);
+    sidebarWidth.value = clampPx(startW + (ev.clientX - startX), 170, 320);
   };
   const up = () => {
     sidebarResizing.value = false;
@@ -54,12 +54,14 @@ const isAdmin = computed(() => store.me?.role === 'admin');
  * 服务商、规则、日志这些都是站点级的运维入口，不该暴露给普通用户。
  * 后端对管理接口另有 adminOnly 中间件，这里只是收窄入口。
  */
-// 侧栏顺序：写信在收件箱上面（桌面侧栏与移动端横向导航共用同一数组，顺序同步改）
+// 侧栏顺序：+邮箱、写信在上面；收件箱只给普通用户，管理员看「全部收件箱」就够了
+// （桌面侧栏与移动端横向导航共用同一数组，顺序同步改）
 const navs = computed((): { to: string; label: string; icon: string; primary?: boolean }[] => [
   // +邮箱在写信上面一栏：样式与 +写信一样的绿底框，点进去是邮箱管理（新建地址那页）
   ...(isAdmin.value ? [{ to: '/mail?tab=addresses', label: '邮箱', icon: 'at', primary: true }] : []),
   { to: '/compose', label: '写信', icon: 'send', primary: true },
-  { to: '/', label: '收件箱', icon: 'inbox' },
+  // 收件箱入口只给普通用户：管理员有「全部收件箱」，两个入口重复
+  ...(isAdmin.value ? [] : [{ to: '/', label: '收件箱', icon: 'inbox' }]),
   /*
    * 管理项合并后只剩三个入口：
    *   全部收件箱 / 邮箱（地址+日志+分析）/ 站点管理（服务商+规则+用户+系统）
