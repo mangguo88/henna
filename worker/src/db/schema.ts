@@ -18,12 +18,13 @@ CREATE TABLE IF NOT EXISTS user (
 CREATE INDEX IF NOT EXISTS idx_user_email ON user(email);
 
 CREATE TABLE IF NOT EXISTS mail_address (
-  id         INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id    INTEGER NOT NULL,
-  address    TEXT NOT NULL UNIQUE,
-  domain     TEXT NOT NULL,
-  enabled    INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL,
+  address      TEXT NOT NULL UNIQUE,
+  domain       TEXT NOT NULL,
+  display_name TEXT,
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_at   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_address_user ON mail_address(user_id);
 
@@ -41,6 +42,7 @@ CREATE TABLE IF NOT EXISTS mail_message (
   html_body  TEXT,
   is_read    INTEGER NOT NULL DEFAULT 0,
   is_star    INTEGER NOT NULL DEFAULT 0,
+  is_spam    INTEGER NOT NULL DEFAULT 0,
   size       INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
@@ -123,8 +125,21 @@ export function splitSql(sql: string): string[] {
     .filter((s) => s.length > 0 && !s.startsWith('--'));
 }
 
+/**
+ * 存量库补列：新字段只写进 CREATE TABLE 对已有库无效（表已存在），
+ * 这里逐条 ALTER TABLE 补上；列已存在会报错，直接忽略即可。
+ * 跑一次 /api/init 就会执行到这里。
+ */
+const MIGRATIONS = [
+  'ALTER TABLE mail_address ADD COLUMN display_name TEXT',
+  'ALTER TABLE mail_message ADD COLUMN is_spam INTEGER NOT NULL DEFAULT 0',
+];
+
 export async function ensureSchema(db: D1Database): Promise<void> {
   for (const stmt of splitSql(SCHEMA_SQL)) {
     await db.prepare(stmt).run();
+  }
+  for (const stmt of MIGRATIONS) {
+    await db.prepare(stmt).run().catch(() => undefined);
   }
 }
