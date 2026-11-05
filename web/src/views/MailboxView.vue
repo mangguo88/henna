@@ -166,7 +166,7 @@ function startListDrag(e: PointerEvent) {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
 }
-/** 列表折叠：点分界线上的箭头收起/展开，宽度记在本地，展开恢复原来宽度 */
+/** 列表折叠：点分界线上的箭头收起/展开，收起后留 20px（约一个字宽），不与前面的边线重合；宽度记在本地，展开恢复原来宽度 */
 const LIST_COLLAPSED_KEY = 'henna.list.collapsed';
 const listCollapsed = ref(localStorage.getItem(LIST_COLLAPSED_KEY) === '1');
 function toggleListCollapsed() {
@@ -175,7 +175,7 @@ function toggleListCollapsed() {
 }
 /**
  * 文件夹栏宽：默认 170px，拖右侧分界线可改（100~260px），最小 100px 刚好露出「收件箱」，记在本地；
- * 点分界线上的箭头收起/展开，展开恢复原来宽度。
+ * 点分界线上的箭头收起/展开，收起后留 20px（约一个字宽），不与前面的边线重合，展开恢复原来宽度。
  */
 const FOLDER_WIDTH_KEY = 'henna.folder.width';
 const FOLDER_COLLAPSED_KEY = 'henna.folder.collapsed';
@@ -208,13 +208,13 @@ function startFolderDrag(e: PointerEvent) {
 }
 const folderStyle = computed(() => {
   if (!isDesktop.value) return {};
-  if (folderCollapsed.value) return { width: '0px' };
+  if (folderCollapsed.value) return { width: '20px' };
   return { width: `${folderWidth.value}px` };
 });
 
 const listStyle = computed(() => {
   if (!isDesktop.value) return {};
-  if (listCollapsed.value) return { width: '0px' };
+  if (listCollapsed.value) return { width: '20px' };
   return { width: `${listWidth.value}px` };
 });
 
@@ -267,7 +267,7 @@ watch(
       @pointerdown="startFolderDrag"
     >
       <button
-        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-henna-200 bg-white text-henna-600 shadow-sm hover:bg-henna-50 hover:text-henna-700"
         :title="folderCollapsed ? '展开文件夹' : '收起文件夹'"
         @click.stop="toggleFolderCollapsed"
         @pointerdown.stop
@@ -338,7 +338,7 @@ watch(
       @pointerdown="startListDrag"
     >
       <button
-        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-henna-200 bg-white text-henna-600 shadow-sm hover:bg-henna-50 hover:text-henna-700"
         :title="listCollapsed ? '展开列表' : '收起列表'"
         @click.stop="toggleListCollapsed"
         @pointerdown.stop
