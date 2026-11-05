@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { RouterView, useRoute } from 'vue-router';
-import { clearToken, loadConfig, loadMe, logout, store } from '../store';
+import { RouterView, useRoute, useRouter } from 'vue-router';
+import { api, type Address, type UserLite } from '../api';
+import { clearToken, loadConfig, loadMe, logout, store, toast } from '../store';
 
 const route = useRoute();
+const router = useRouter();
 
 /** 侧边栏折叠状态，记在本地，换设备互不影响 */
 const COLLAPSE_KEY = 'henna.sidebar.collapsed';
@@ -26,6 +28,8 @@ function readSidebarWidth() {
 const sidebarWidth = ref(readSidebarWidth());
 const sidebarResizing = ref(false);
 function startSidebarDrag(e: PointerEvent) {
+  // 侧栏收起时分界线只剩箭头，拖动无效，点箭头展开
+  if (collapsed.value) return;
   const startX = e.clientX;
   const startW = sidebarWidth.value;
   sidebarResizing.value = true;
@@ -52,6 +56,8 @@ const isAdmin = computed(() => store.me?.role === 'admin');
  */
 // 侧栏顺序：写信在收件箱上面（桌面侧栏与移动端横向导航共用同一数组，顺序同步改）
 const navs = computed((): { to: string; label: string; icon: string; primary?: boolean }[] => [
+  // +邮箱在写信上面一栏：样式与 +写信一样的绿底框，点进去是邮箱管理（新建地址那页）
+  ...(isAdmin.value ? [{ to: '/mail?tab=addresses', label: '邮箱', icon: 'at', primary: true }] : []),
   { to: '/compose', label: '写信', icon: 'send', primary: true },
   { to: '/', label: '收件箱', icon: 'inbox' },
   /*
@@ -69,6 +75,96 @@ const navs = computed((): { to: string; label: string; icon: string; primary?: b
     : []),
   // 账户设置不在主导航里，单独放左下角（见侧栏底部），移动端仍放在横向导航末尾
 ]);
+
+// 绿底主按钮（+邮箱 / +写信）放最上面，邮箱列表紧跟在它们下面，其余导航再往下
+const primaryNavs = computed(() => navs.value.filter((n) => n.primary));
+const restNavs = computed(() => navs.value.filter((n) => !n.primary));
+
+/**
+ * 侧栏邮箱列表：展示所有创建的邮箱（管理员看全站，普通用户看自己的）。
+ * 点地址进这个邮箱，点 ··· 弹出菜单。数据每次进页面都刷新一次，
+ * 在邮箱管理页新建地址后回来，列表也会跟着更新。
+ */
+const mailboxes = ref<Address[]>([]);
+async function loadMailboxes() {
+  try {
+    mailboxes.value = await api.get<Address[]>('/mailbox');
+  } catch {
+    mailboxes.value = [];
+  }
+}
+onMounted(loadMailboxes);
+watch(
+  () => route.path,
+  () => {
+    loadMailboxes();
+  },
+);
+function isCurrentMailbox(a: Address) {
+  return route.name === 'mailbox' && decodeURIComponent(String(route.params.addr ?? '')) === a.address;
+}
+function goMailbox(a: Address) {
+  openMenuId.value = null;
+  router.push({ name: 'mailbox', params: { addr: a.address } });
+}
+
+/** 三点菜单：一次只开一个 */
+const openMenuId = ref<number | null>(null);
+function toggleMenu(id: number, e: Event) {
+  e.stopPropagation();
+  openMenuId.value = openMenuId.value === id ? null : id;
+}
+
+// 修改显示名称
+const renameTarget = ref<Address | null>(null);
+const renameValue = ref('');
+function openRename(a: Address) {
+  renameTarget.value = a;
+  renameValue.value = a.display_name ?? '';
+  openMenuId.value = null;
+}
+async function saveRename() {
+  if (!renameTarget.value) return;
+  await api.put(`/mailbox/${renameTarget.value.id}`, { display_name: renameValue.value.trim() || null });
+  renameTarget.value = null;
+  toast('已保存');
+  await loadMailboxes();
+}
+
+// 转移邮箱（仅管理员）
+const transferTarget = ref<Address | null>(null);
+const transferUsers = ref<UserLite[]>([]);
+const transferTo = ref('');
+async function openTransfer(a: Address) {
+  transferTarget.value = a;
+  transferTo.value = '';
+  openMenuId.value = null;
+  transferUsers.value = await api.get<UserLite[]>('/admin/users');
+}
+async function saveTransfer() {
+  if (!transferTarget.value || !transferTo.value) return;
+  await api.put(`/mailbox/${transferTarget.value.id}`, { owner_id: Number(transferTo.value) });
+  transferTarget.value = null;
+  toast('已转移');
+  await loadMailboxes();
+}
+
+// 注销邮箱：只删地址，已收到的邮件还留在原用户收件箱里
+async function removeMailbox(a: Address) {
+  openMenuId.value = null;
+  if (!confirm(`确认注销邮箱 ${a.address}？注销后这个地址收不到新邮件，已收到的邮件不受影响。`)) return;
+  await api.del(`/mailbox/${a.id}`);
+  toast('已注销');
+  await loadMailboxes();
+  if (isCurrentMailbox(a)) router.push('/');
+}
+
+// 客户端密码说明：Henna 没有 IMAP/SMTP 客户端接入，收信走 Cloudflare，读信只在网页面板
+const showClientPassInfo = ref(false);
+function openClientPassInfo() {
+  openMenuId.value = null;
+  showClientPassInfo.value = true;
+}
 
 /** 左下角的账户设置入口（桌面侧栏底部 + 移动端横向导航末尾共用） */
 const settingsNav = { to: '/settings', label: '账户设置', icon: 'gear' };
@@ -111,18 +207,18 @@ const paths: Record<string, string> = {
       :class="sidebarResizing ? 'duration-0' : ''"
       :style="collapsed ? { width: '68px' } : { width: sidebarWidth + 'px' }"
     >
-      <!-- 头部：logo + 折叠按钮 -->
-      <div class="flex items-center gap-2.5 px-4 py-5" :class="collapsed ? 'justify-center px-2' : ''">
+      <!-- 头部：点 logo / 名称回首页 -->
+      <RouterLink to="/" class="flex items-center gap-2.5 px-4 py-5" :class="collapsed ? 'justify-center px-2' : ''" title="回首页">
         <img src="/logo-512.png" alt="Henna Mail" class="h-7 w-auto shrink-0" />
         <div v-if="!collapsed" class="min-w-0 flex-1 leading-tight">
           <div class="truncate text-sm font-semibold text-ink-900">{{ store.config?.appName ?? 'Henna Mail' }}</div>
           <div class="text-[11px] text-ink-500">邮箱分发系统</div>
         </div>
-      </div>
+      </RouterLink>
 
-      <nav class="flex-1 space-y-1 px-3">
+      <nav class="flex-1 space-y-1 overflow-y-auto px-3">
         <RouterLink
-          v-for="n in navs"
+          v-for="n in primaryNavs"
           :key="n.to"
           :to="n.to"
           class="nav-item"
@@ -130,7 +226,7 @@ const paths: Record<string, string> = {
             'nav-item-active': route.path === n.to && !n.primary,
             'justify-center !px-0': collapsed,
             '!bg-henna-500 !text-white hover:!bg-henna-600': n.primary,
-            // 绿底写信按钮里的“+ 写信”居中显示（折叠时本来就是居中的图标）
+            // 绿底主按钮里的文字居中显示（折叠时本来就是居中的图标）
             'justify-center': n.primary,
           }"
           :style="n.primary ? 'color: var(--brand-on, #fff)' : undefined"
@@ -146,9 +242,79 @@ const paths: Record<string, string> = {
           >
             <path :d="paths[n.icon]" stroke-linecap="round" />
           </svg>
-          <span v-if="!collapsed">{{ n.primary ? '+ 写信' : n.label }}</span>
+          <span v-if="!collapsed">{{ n.primary ? '+ ' + n.label : n.label }}</span>
+        </RouterLink>
+
+        <!-- 邮箱列表：+写信下面一栏，展示所有创建的邮箱（折叠时隐藏） -->
+        <div v-if="!collapsed" class="pt-2">
+          <div class="mb-1 flex items-center justify-between px-1">
+            <span class="text-[11px] font-medium text-ink-500">邮箱列表</span>
+            <span class="text-[11px] text-ink-500">{{ mailboxes.length }} 个</span>
+          </div>
+          <div class="max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
+            <div
+              v-for="a in mailboxes"
+              :key="a.id"
+              class="relative flex items-center gap-1 rounded-lg px-1 py-1.5"
+              :class="isCurrentMailbox(a) ? 'bg-henna-50' : 'hover:bg-sand-100'"
+            >
+              <button class="flex min-w-0 flex-1 items-center gap-2 text-left" :title="a.address" @click="goMailbox(a)">
+                <span class="h-2 w-2 shrink-0 rounded-full" :class="a.enabled ? 'bg-green-500' : 'bg-sand-300'" />
+                <span class="min-w-0 flex-1 leading-tight">
+                  <span class="block truncate text-xs" :class="isCurrentMailbox(a) ? 'font-medium text-henna-600' : 'text-ink-700'">
+                    {{ a.display_name || a.address }}
+                  </span>
+                  <span v-if="a.display_name" class="block truncate text-[10px] text-ink-500">{{ a.address }}</span>
+                </span>
+              </button>
+              <button
+                class="shrink-0 rounded px-1 text-sm leading-none text-ink-500 hover:bg-sand-200 hover:text-ink-900"
+                title="更多操作"
+                @click="toggleMenu(a.id, $event)"
+              >
+                ···
+              </button>
+              <div
+                v-if="openMenuId === a.id"
+                class="absolute left-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-sand-200 bg-white py-1 shadow-lg"
+              >
+                <button class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openRename(a)">
+                  修改显示名称
+                </button>
+                <button class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openClientPassInfo">
+                  客户端密码
+                </button>
+                <button v-if="isAdmin" class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openTransfer(a)">
+                  转移邮箱
+                </button>
+                <button class="w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50" @click="removeMailbox(a)">
+                  注销邮箱
+                </button>
+              </div>
+            </div>
+            <div v-if="!mailboxes.length" class="px-1 py-2 text-xs leading-relaxed text-ink-500">
+              还没有邮箱，点上面 + 邮箱创建一个
+            </div>
+          </div>
+        </div>
+
+        <RouterLink
+          v-for="n in restNavs"
+          :key="n.to"
+          :to="n.to"
+          class="nav-item"
+          :class="{ 'nav-item-active': route.path === n.to, 'justify-center !px-0': collapsed }"
+          :title="collapsed ? n.label : undefined"
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path :d="paths[n.icon]" stroke-linecap="round" />
+          </svg>
+          <span v-if="!collapsed">{{ n.label }}</span>
         </RouterLink>
       </nav>
+
+      <!-- 点三点菜单外面任意处关掉菜单 -->
+      <div v-if="openMenuId !== null" class="fixed inset-0 z-20" @click="openMenuId = null"></div>
 
       <!-- 折叠开关 -->
       <div class="border-t border-sand-200 p-2">
@@ -199,19 +365,29 @@ const paths: Record<string, string> = {
       </div>
     </aside>
 
-    <!-- 侧栏与中间栏之间的可拖分界线：拖动改侧栏宽度（仅桌面端、未折叠时） -->
+    <!-- 侧栏与中间栏之间的分界线：拖动改侧栏宽度，点中间的箭头收起/展开侧栏（仅桌面端；收起后箭头还留在这里，点一下就展开） -->
     <div
-      v-if="!collapsed"
-      class="hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
+      class="relative hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
       title="拖动调整侧栏宽度"
       @pointerdown="startSidebarDrag"
-    ></div>
+    >
+      <button
+        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        :title="collapsed ? '展开侧栏' : '收起侧栏'"
+        @click.stop="toggleSidebar"
+        @pointerdown.stop
+      >
+        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path :d="collapsed ? paths.expand : paths.collapse" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
 
     <!-- 主区 -->
     <div class="flex min-w-0 flex-1 flex-col">
       <!-- 移动端顶栏 -->
       <header class="flex items-center justify-between border-b border-sand-200 bg-white px-4 py-3 md:hidden">
-        <div class="flex items-center gap-2">
+        <RouterLink to="/" class="flex items-center gap-2">
           <div class="grid h-8 w-8 place-items-center rounded-lg bg-henna-500" style="color: var(--brand-on, #fff)">
             <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 7h18v10H3z" />
@@ -219,7 +395,7 @@ const paths: Record<string, string> = {
             </svg>
           </div>
           <span class="text-sm font-semibold">{{ store.config?.appName ?? 'Henna Mail' }}</span>
-        </div>
+        </RouterLink>
         <button class="btn-ghost !px-2 !py-1 text-xs" @click="logout">退出</button>
       </header>
 
@@ -238,13 +414,58 @@ const paths: Record<string, string> = {
                 : 'hover:bg-sand-100'
           "
         >
-          {{ n.primary ? '+ 写信' : n.label }}
+          {{ n.primary ? '+ ' + n.label : n.label }}
         </RouterLink>
       </nav>
 
       <main class="min-h-0 flex-1 overflow-y-auto">
         <RouterView />
       </main>
+    </div>
+
+    <!-- 修改显示名称 -->
+    <div v-if="renameTarget" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" @click.self="renameTarget = null">
+      <div class="w-full max-w-xs rounded-2xl bg-white p-4 shadow-xl">
+        <div class="mb-1 text-sm font-semibold">修改显示名称</div>
+        <div class="mb-3 text-xs leading-relaxed text-ink-500">{{ renameTarget.address }} · 只改侧栏里显示的名字，不改地址本身</div>
+        <input v-model="renameValue" class="input w-full" placeholder="例如：客服邮箱" maxlength="50" @keyup.enter="saveRename" />
+        <div class="mt-4 flex justify-end gap-2">
+          <button class="btn-ghost" @click="renameTarget = null">取消</button>
+          <button class="btn-primary" @click="saveRename">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 转移邮箱（仅管理员） -->
+    <div v-if="transferTarget" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" @click.self="transferTarget = null">
+      <div class="w-full max-w-xs rounded-2xl bg-white p-4 shadow-xl">
+        <div class="mb-1 text-sm font-semibold">转移邮箱</div>
+        <div class="mb-3 text-xs leading-relaxed text-ink-500">
+          {{ transferTarget.address }} · 转移后新邮件归新用户，旧邮件仍留在原用户的收件箱里
+        </div>
+        <select v-model="transferTo" class="input w-full">
+          <option value="" disabled>选择目标用户</option>
+          <option v-for="u in transferUsers" :key="u.id" :value="String(u.id)">{{ u.email }}（{{ u.role }}）</option>
+        </select>
+        <div class="mt-4 flex justify-end gap-2">
+          <button class="btn-ghost" @click="transferTarget = null">取消</button>
+          <button class="btn-primary" :disabled="!transferTo" @click="saveTransfer">转移</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 客户端密码说明 -->
+    <div v-if="showClientPassInfo" class="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" @click.self="showClientPassInfo = false">
+      <div class="w-full max-w-xs rounded-2xl bg-white p-4 shadow-xl">
+        <div class="mb-1 text-sm font-semibold">客户端密码</div>
+        <div class="mb-3 text-xs leading-relaxed text-ink-500">
+          Henna 收信走 Cloudflare，读信只在网页面板，没有 IMAP / SMTP 客户端接入，所以没有可设的客户端密码。
+          平时登录面板用的是账号密码，在左下角账户设置里改。
+        </div>
+        <div class="flex justify-end">
+          <button class="btn-primary" @click="showClientPassInfo = false">知道了</button>
+        </div>
+      </div>
     </div>
 
   </div>
