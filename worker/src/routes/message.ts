@@ -21,6 +21,7 @@ interface MessageRow {
   html_body: string | null;
   is_read: number;
   is_star: number;
+  is_spam: number;
   size: number;
   created_at: number;
 }
@@ -60,7 +61,8 @@ function toSnippet(row: MessageRow): string {
 message.get('/', authRequired, async (c) => {
   const user = c.get('user');
   const boxRaw = c.req.query('box') ?? 'in';
-  const box = boxRaw === 'out' ? 'out' : boxRaw === 'draft' ? 'draft' : 'in';
+  // spam 是收件里的垃圾邮件：方向仍是 in，再按 is_spam 过滤
+  const box = boxRaw === 'out' ? 'out' : boxRaw === 'draft' ? 'draft' : boxRaw === 'spam' ? 'spam' : 'in';
   const q = (c.req.query('q') ?? '').trim();
   const limit = clamp(Number(c.req.query('limit') ?? 50), 1, 200);
   const offset = clamp(Number(c.req.query('offset') ?? 0), 0, 100000);
@@ -68,12 +70,32 @@ message.get('/', authRequired, async (c) => {
   // scope=all 仅管理员可用；普通用户传了也无效（按自己的返回）
   const all = c.req.query('scope') === 'all' && user.role === 'admin';
 
+  // mailbox=xxx@yyy 只看这一个邮箱的信：普通用户只能看自己的邮箱
+  const mailboxAddr = (c.req.query('mailbox') ?? '').trim().toLowerCase();
+  if (mailboxAddr) {
+    const addrRow = await qOne<{ id: number; user_id: number }>(
+      c.env.DB,
+      'SELECT id, user_id FROM mail_address WHERE address = ?',
+      mailboxAddr,
+    );
+    if (!addrRow) throw new HttpError('邮箱不存在', 404);
+    if (!all && addrRow.user_id !== user.id) throw new HttpError('无权访问', 403);
+  }
+
+  const dirParam = box === 'spam' ? 'in' : box;
   let sql = all
     ? 'SELECT m.id, m.user_id, m.address_id, m.direction, m.from_addr, m.from_name, m.to_addr, m.subject, m.text_body, m.html_body, m.is_read, m.is_star, m.size, m.created_at, u.email AS owner FROM mail_message m LEFT JOIN user u ON u.id = m.user_id WHERE m.direction = ?'
     : 'SELECT id, user_id, address_id, direction, from_addr, from_name, to_addr, subject, text_body, html_body, is_read, is_star, size, created_at FROM mail_message WHERE direction = ? AND user_id = ?';
-  const args: unknown[] = [box];
+  const args: unknown[] = [dirParam];
   if (!all) args.push(user.id);
 
+  if (box === 'spam') sql += all ? ' AND m.is_spam = 1' : ' AND is_spam = 1';
+  if (mailboxAddr) {
+    // 收件/垃圾按收件人筛，已发送/草稿按发件人筛
+    const field = box === 'out' || box === 'draft' ? 'from_addr' : 'to_addr';
+    sql += all ? ` AND m.${field} = ?` : ` AND ${field} = ?`;
+    args.push(mailboxAddr);
+  }
   if (c.req.query('star') === '1') sql += all ? ' AND m.is_star = 1' : ' AND is_star = 1';
   if (q) {
     sql += all
@@ -141,6 +163,15 @@ message.post('/:id/star', authRequired, async (c) => {
   await assertOwn(c, id);
   const { star } = (await c.req.json().catch(() => ({}))) as { star?: number };
   await exec(c.env.DB, 'UPDATE mail_message SET is_star = ? WHERE id = ?', star ? 1 : 0, id);
+  return c.json(ok({ updated: true }));
+});
+
+/** 标记/取消垃圾邮件：和星标同一套鉴权 */
+message.post('/:id/spam', authRequired, async (c) => {
+  const id = Number(c.req.param('id'));
+  await assertOwn(c, id);
+  const { spam } = (await c.req.json().catch(() => ({}))) as { spam?: number };
+  await exec(c.env.DB, 'UPDATE mail_message SET is_spam = ? WHERE id = ?', spam ? 1 : 0, id);
   return c.json(ok({ updated: true }));
 });
 
