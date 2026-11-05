@@ -166,7 +166,7 @@ function startListDrag(e: PointerEvent) {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
 }
-/** 列表折叠：点分界线上的箭头收起/展开，收起后留 20px（约一个字宽），不与前面的边线重合；宽度记在本地，展开恢复原来宽度 */
+/** 列表折叠：点分界线上的箭头收起/展开，收起后留 14px、内容不渲染，不露半个字、不与前面的边线重合；宽度记在本地，展开恢复原来宽度 */
 const LIST_COLLAPSED_KEY = 'henna.list.collapsed';
 const listCollapsed = ref(localStorage.getItem(LIST_COLLAPSED_KEY) === '1');
 function toggleListCollapsed() {
@@ -175,7 +175,7 @@ function toggleListCollapsed() {
 }
 /**
  * 文件夹栏宽：默认 170px，拖右侧分界线可改（100~260px），最小 100px 刚好露出「收件箱」，记在本地；
- * 点分界线上的箭头收起/展开，收起后留 20px（约一个字宽），不与前面的边线重合，展开恢复原来宽度。
+ * 点分界线上的箭头收起/展开，收起后留 14px、内容不渲染，不露半个字、不与前面的边线重合，展开恢复原来宽度。
  */
 const FOLDER_WIDTH_KEY = 'henna.folder.width';
 const FOLDER_COLLAPSED_KEY = 'henna.folder.collapsed';
@@ -208,13 +208,13 @@ function startFolderDrag(e: PointerEvent) {
 }
 const folderStyle = computed(() => {
   if (!isDesktop.value) return {};
-  if (folderCollapsed.value) return { width: '20px' };
+  if (folderCollapsed.value) return { width: '14px' };
   return { width: `${folderWidth.value}px` };
 });
 
 const listStyle = computed(() => {
   if (!isDesktop.value) return {};
-  if (listCollapsed.value) return { width: '20px' };
+  if (listCollapsed.value) return { width: '14px' };
   return { width: `${listWidth.value}px` };
 });
 
@@ -242,11 +242,11 @@ watch(
   <div class="flex h-full">
     <!-- 文件夹栏（桌面端） -->
     <aside class="hidden shrink-0 flex-col border-r border-sand-200 bg-white md:flex" :class="folderCollapsed ? 'overflow-hidden' : ''" :style="folderStyle">
-      <div class="border-b border-sand-200 px-4 py-3">
+      <div v-if="!folderCollapsed" class="border-b border-sand-200 px-4 py-3">
         <RouterLink to="/" class="text-xs text-ink-500 hover:text-henna-600">‹ 返回收件箱</RouterLink>
         <div class="mt-1 truncate text-sm font-semibold text-ink-900" :title="addr">{{ addr }}</div>
       </div>
-      <nav class="flex-1 space-y-1 overflow-y-auto p-3">
+      <nav v-if="!folderCollapsed" class="flex-1 space-y-1 overflow-y-auto p-3">
         <button
           v-for="f in folders"
           :key="f.key"
@@ -267,12 +267,12 @@ watch(
       @pointerdown="startFolderDrag"
     >
       <button
-        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-henna-200 bg-white text-henna-600 shadow-sm hover:bg-henna-50 hover:text-henna-700"
+        class="absolute left-1/2 top-1/2 z-10 grid h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-henna-200 bg-white text-henna-600 shadow-sm hover:bg-henna-50 hover:text-henna-700"
         :title="folderCollapsed ? '展开文件夹' : '收起文件夹'"
         @click.stop="toggleFolderCollapsed"
         @pointerdown.stop
       >
-        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg viewBox="0 0 24 24" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2.5">
           <path :d="folderCollapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
@@ -293,12 +293,12 @@ watch(
         </button>
       </div>
 
-      <div class="flex items-center gap-2 border-b border-sand-200 bg-white px-4 py-3">
+      <div v-if="!listCollapsed" class="flex items-center gap-2 border-b border-sand-200 bg-white px-4 py-3">
         <span class="shrink-0 text-sm font-semibold text-ink-900">{{ folderLabel }}</span>
         <input v-model="q" class="input min-w-0 flex-1 !py-1.5 text-xs" placeholder="搜索主题 / 地址" @keyup.enter="load" />
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <div v-if="!listCollapsed" class="min-h-0 flex-1 overflow-y-auto">
         <div v-if="!items.length && !loading" class="p-8 text-center">
           <svg viewBox="0 0 24 24" class="mx-auto h-12 w-12 text-sand-300" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M3 7h18v10H3z" /><path d="M3 7l9 6 9-6" />
@@ -338,12 +338,12 @@ watch(
       @pointerdown="startListDrag"
     >
       <button
-        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-henna-200 bg-white text-henna-600 shadow-sm hover:bg-henna-50 hover:text-henna-700"
+        class="absolute left-1/2 top-1/2 z-10 grid h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-henna-200 bg-white text-henna-600 shadow-sm hover:bg-henna-50 hover:text-henna-700"
         :title="listCollapsed ? '展开列表' : '收起列表'"
         @click.stop="toggleListCollapsed"
         @pointerdown.stop
       >
-        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg viewBox="0 0 24 24" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2.5">
           <path :d="listCollapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
