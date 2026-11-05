@@ -8,12 +8,15 @@
  *
  * 后端靠 `scope=all` 区分，且仅管理员生效（普通用户传了也按自己的返回）。
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { api, type MailDetail, type MailItem } from '../api';
 import { fmtSize, fmtTime, toast } from '../store';
 
 const box = ref<'in' | 'out'>('in');
 const starOnly = ref(false);
+const router = useRouter();
+
 const items = ref<MailItem[]>([]);
 const detail = ref<MailDetail | null>(null);
 const q = ref('');
@@ -67,6 +70,33 @@ async function star() {
   await api.post(`/message/${detail.value.id}/star`, { star: next });
   detail.value.is_star = next;
 }
+/** 引用原文：优先纯文本，只有 HTML 时剥掉标签再引 */
+function quoteText() {
+  const d = detail.value;
+  if (!d) return '';
+  if (d.text_body) return d.text_body;
+  if (d.html_body) return d.html_body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return '';
+}
+
+/** 回复：收件人是原发件人，主题加 Re:，正文带上原文引用 */
+function reply() {
+  if (!detail.value) return;
+  const d = detail.value;
+  const subject = d.subject?.startsWith('Re:') ? d.subject : `Re: ${d.subject || ''}`;
+  const body = `\n\n--- 原始邮件 ---\n发件人：${d.from_name || d.from_addr} <${d.from_addr}>\n时间：${new Date(d.created_at).toLocaleString()}\n收件人：${d.to_addr}\n主题：${d.subject || ''}\n\n${quoteText()}`;
+  router.push({ path: '/compose', query: { to: d.from_addr, subject, body } });
+}
+
+/** 转发：收件人留空自己填，主题加 Fwd:，正文带上原文引用 */
+function forward() {
+  if (!detail.value) return;
+  const d = detail.value;
+  const subject = d.subject?.startsWith('Fwd:') ? d.subject : `Fwd: ${d.subject || ''}`;
+  const body = `\n\n--- 转发的邮件 ---\n发件人：${d.from_name || d.from_addr} <${d.from_addr}>\n时间：${new Date(d.created_at).toLocaleString()}\n收件人：${d.to_addr}\n主题：${d.subject || ''}\n\n${quoteText()}`;
+  router.push({ path: '/compose', query: { subject, body } });
+}
+
 
 function initial(owner?: string) {
   return (owner ?? '?')[0]?.toUpperCase() ?? '?';
@@ -81,13 +111,52 @@ const emptyText = computed(() => {
 });
 
 watch([box, starOnly], load);
+/**
+ * 列表栏宽：默认 280px（比原来的 320px 再窄一点），拖右侧分界线可改，
+ * 240~520px 之间，记在本地。手机端不生效，列表仍占满屏。
+ */
+const LIST_WIDTH_KEY = 'henna.list.width';
+const clampListPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+function readListWidth() {
+  const v = Number(localStorage.getItem(LIST_WIDTH_KEY));
+  return Number.isFinite(v) && v > 0 ? clampListPx(v, 240, 520) : 280;
+}
+const listWidth = ref(readListWidth());
+const isDesktop = ref(false);
+let listMq: MediaQueryList | null = null;
+function onListMqChange(e: MediaQueryListEvent) {
+  isDesktop.value = e.matches;
+}
+function startListDrag(e: PointerEvent) {
+  const startX = e.clientX;
+  const startW = listWidth.value;
+  const move = (ev: PointerEvent) => {
+    listWidth.value = clampListPx(startW + (ev.clientX - startX), 240, 520);
+  };
+  const up = () => {
+    localStorage.setItem(LIST_WIDTH_KEY, String(listWidth.value));
+    window.removeEventListener('pointermove', move);
+    window.removeEventListener('pointerup', up);
+  };
+  window.addEventListener('pointermove', move);
+  window.addEventListener('pointerup', up);
+}
+const listStyle = computed(() => (isDesktop.value ? { width: `${listWidth.value}px` } : {}));
+
+onMounted(() => {
+  listMq = window.matchMedia('(min-width: 768px)');
+  isDesktop.value = listMq.matches;
+  listMq.addEventListener('change', onListMqChange);
+});
+onUnmounted(() => listMq?.removeEventListener('change', onListMqChange));
+
 onMounted(load);
 </script>
 
 <template>
   <div class="flex h-full">
     <!-- 列表 -->
-    <section class="flex w-full flex-col md:w-[380px] md:shrink-0 md:border-r md:border-sand-200">
+    <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :style="listStyle">
       <div class="border-b border-sand-200 bg-white px-4 py-3">
         <div class="flex items-center gap-2">
           <div class="flex gap-1 rounded-lg bg-sand-100 p-1">
@@ -116,7 +185,7 @@ onMounted(load);
         </div>
 
         <div class="mt-2 flex items-center gap-2">
-          <input v-model="q" class="input !py-1.5 text-xs" placeholder="搜索主题 / 地址" @keyup.enter="load" />
+          <input v-model="q" class="input min-w-0 flex-1 !py-1.5 text-xs" placeholder="搜索主题 / 地址" @keyup.enter="load" />
           <select v-if="owners.length" v-model="owner" class="input !py-1.5 !text-xs">
             <option value="">全部用户</option>
             <option v-for="o in owners" :key="o" :value="o">{{ o }}</option>
@@ -162,6 +231,13 @@ onMounted(load);
     </section>
 
     <!-- 详情 -->
+    <!-- 列表与详情之间的可拖分界线：拖动改列表宽度（仅桌面端） -->
+    <div
+      v-if="isDesktop"
+      class="hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
+      title="拖动调整列表宽度"
+      @pointerdown="startListDrag"
+    ></div>
     <section class="hidden min-w-0 flex-1 flex-col md:flex">
       <div v-if="!detail" class="grid flex-1 place-items-center px-6 text-center text-sm text-ink-500">
         <div>
@@ -189,6 +265,8 @@ onMounted(load);
             </div>
           </div>
           <div class="flex shrink-0 gap-2">
+            <button class="btn-primary !px-2.5 !py-1.5 text-xs" @click="reply">回复</button>
+            <button class="btn-ghost !px-2.5 !py-1.5 text-xs" @click="forward">转发</button>
             <button class="btn-ghost !px-2.5 !py-1.5 text-xs" @click="star">
               {{ detail.is_star ? '取消星标' : '星标' }}
             </button>
