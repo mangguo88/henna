@@ -28,6 +28,8 @@ const routes = [
       { path: '', name: 'inbox', component: () => import('./views/Inbox.vue') },
       { path: 'all', name: 'all-inbox', component: () => import('./views/AllInbox.vue'), meta: { admin: true } },
       { path: 'compose', name: 'compose', component: () => import('./views/Compose.vue') },
+      // 进入邮箱：/mailbox/aa88@v.cd，只看这一个邮箱的信（后端按归属校验）
+      { path: 'mailbox/:addr', name: 'mailbox', component: () => import('./views/MailboxView.vue') },
       { path: 'settings', name: 'settings', component: () => import('./views/Settings.vue') },
 
       /*
