@@ -93,11 +93,29 @@ async function loadMailboxes() {
     mailboxes.value = [];
   }
 }
-onMounted(loadMailboxes);
+/** 邮箱列表默认收起：只留标题行，点标题才展开看创建的邮箱，选择记在本地 */
+const MAILBOX_LIST_KEY = 'henna.mailboxList.expanded';
+const mailboxListExpanded = ref(localStorage.getItem(MAILBOX_LIST_KEY) === '1');
+function toggleMailboxList() {
+  mailboxListExpanded.value = !mailboxListExpanded.value;
+  localStorage.setItem(MAILBOX_LIST_KEY, mailboxListExpanded.value ? '1' : '0');
+}
+// 正在某个邮箱里时自动展开，让当前邮箱看得见
+function syncMailboxListExpanded() {
+  if (route.name === 'mailbox') {
+    mailboxListExpanded.value = true;
+    localStorage.setItem(MAILBOX_LIST_KEY, '1');
+  }
+}
+onMounted(() => {
+  loadMailboxes();
+  syncMailboxListExpanded();
+});
 watch(
   () => route.path,
   () => {
     loadMailboxes();
+    syncMailboxListExpanded();
   },
 );
 function isCurrentMailbox(a: Address) {
@@ -108,12 +126,36 @@ function goMailbox(a: Address) {
   router.push({ name: 'mailbox', params: { addr: a.address } });
 }
 
-/** 三点菜单：一次只开一个 */
+/**
+ * 三点菜单：一次只开一个，弹窗固定定位（不放在行内），
+ * 直接在点的那个 ··· 正下方弹出来，不会被侧栏的窄宽度和滚动裁掉，四项都能看见。
+ * 快到底部放不下时改往上弹。
+ */
 const openMenuId = ref<number | null>(null);
+const menuPos = ref<{ top: number; left: number } | null>(null);
+const menuMailbox = computed(() => mailboxes.value.find((a) => a.id === openMenuId.value) ?? null);
 function toggleMenu(id: number, e: Event) {
   e.stopPropagation();
-  openMenuId.value = openMenuId.value === id ? null : id;
+  if (openMenuId.value === id) {
+    openMenuId.value = null;
+    return;
+  }
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const menuW = 176;
+  const menuH = 170;
+  // 正下方弹出：上沿贴着按钮下沿，左沿与按钮左沿（三个点里最左边那个点）对齐
+  let left = r.left;
+  if (left + menuW > window.innerWidth) left = window.innerWidth - menuW - 8;
+  if (left < 8) left = 8;
+  let top = r.bottom + 4;
+  // 快到底了放不下就改往上弹
+  if (top + menuH > window.innerHeight) top = Math.max(8, r.top - menuH - 4);
+  menuPos.value = { top, left };
+  openMenuId.value = id;
 }
+watch(openMenuId, (v) => {
+  if (v === null) menuPos.value = null;
+});
 
 // 修改显示名称
 const renameTarget = ref<Address | null>(null);
@@ -196,6 +238,7 @@ const paths: Record<string, string> = {
   ticket: 'M3 9V7a2 2 0 012-2h14a2 2 0 012 2v2a2 2 0 000 4v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4a2 2 0 000-4zM13 5v14',
   collapse: 'M15 6l-6 6 6 6',
   expand: 'M9 6l6 6-6 6',
+  chevronDown: 'M6 9l6 6 6-6',
 };
 </script>
 
@@ -245,13 +288,20 @@ const paths: Record<string, string> = {
           <span v-if="!collapsed">{{ n.primary ? '+ ' + n.label : n.label }}</span>
         </RouterLink>
 
-        <!-- 邮箱列表：+写信下面一栏，展示所有创建的邮箱（折叠时隐藏） -->
+        <!-- 邮箱列表：+写信下面一栏，默认收起只留标题行，点标题展开看创建的邮箱（折叠时隐藏） -->
         <div v-if="!collapsed" class="pt-2">
-          <div class="mb-1 flex items-center justify-between px-1">
-            <span class="text-[11px] font-medium text-ink-500">邮箱列表</span>
-            <span class="text-[11px] text-ink-500">{{ mailboxes.length }} 个</span>
-          </div>
-          <div class="max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
+          <!-- 和下面收件箱同一格式的导航行：图标 + 名称，点一下展开/收起邮箱列表 -->
+          <button class="nav-item mb-1 w-full" :title="mailboxListExpanded ? '收起邮箱列表' : '展开邮箱列表'" @click="toggleMailboxList">
+            <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path :d="paths.inbox" stroke-linecap="round" />
+            </svg>
+            <span class="flex-1 text-left">邮箱列表</span>
+            <span class="text-xs">{{ mailboxes.length }} 个</span>
+            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path :d="mailboxListExpanded ? paths.chevronDown : paths.expand" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <div v-if="mailboxListExpanded" class="max-h-64 space-y-0.5 overflow-y-auto pr-0.5">
             <div
               v-for="a in mailboxes"
               :key="a.id"
@@ -274,23 +324,6 @@ const paths: Record<string, string> = {
               >
                 ···
               </button>
-              <div
-                v-if="openMenuId === a.id"
-                class="absolute left-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-sand-200 bg-white py-1 shadow-lg"
-              >
-                <button class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openRename(a)">
-                  修改显示名称
-                </button>
-                <button class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openClientPassInfo">
-                  客户端密码
-                </button>
-                <button v-if="isAdmin" class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openTransfer(a)">
-                  转移邮箱
-                </button>
-                <button class="w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50" @click="removeMailbox(a)">
-                  注销邮箱
-                </button>
-              </div>
             </div>
             <div v-if="!mailboxes.length" class="px-1 py-2 text-xs leading-relaxed text-ink-500">
               还没有邮箱，点上面 + 邮箱创建一个
@@ -312,24 +345,6 @@ const paths: Record<string, string> = {
           <span v-if="!collapsed">{{ n.label }}</span>
         </RouterLink>
       </nav>
-
-      <!-- 点三点菜单外面任意处关掉菜单 -->
-      <div v-if="openMenuId !== null" class="fixed inset-0 z-20" @click="openMenuId = null"></div>
-
-      <!-- 折叠开关 -->
-      <div class="border-t border-sand-200 p-2">
-        <button
-          class="nav-item w-full"
-          :class="collapsed ? 'justify-center !px-0' : ''"
-          :title="collapsed ? '展开侧边栏' : '收起侧边栏'"
-          @click="toggleSidebar"
-        >
-          <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.8">
-            <path :d="collapsed ? paths.expand : paths.collapse" stroke-linecap="round" />
-          </svg>
-          <span v-if="!collapsed">收起侧边栏</span>
-        </button>
-      </div>
 
       <!-- 账户设置：挪到左下角，用户信息上面 -->
       <div class="border-t border-sand-200 p-2">
@@ -421,6 +436,27 @@ const paths: Record<string, string> = {
       <main class="min-h-0 flex-1 overflow-y-auto">
         <RouterView />
       </main>
+    </div>
+
+    <!-- 三点菜单弹窗：固定定位，在点的那个 ··· 正下方弹出，不会被侧栏裁掉；点外面任意处关掉 -->
+    <div v-if="openMenuId !== null" class="fixed inset-0 z-40" @click="openMenuId = null"></div>
+    <div
+      v-if="menuMailbox && menuPos"
+      class="fixed z-50 w-44 overflow-hidden rounded-xl border border-sand-200 bg-white py-1 shadow-lg"
+      :style="{ top: menuPos.top + 'px', left: menuPos.left + 'px' }"
+    >
+      <button class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openRename(menuMailbox)">
+        修改显示名称
+      </button>
+      <button class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openClientPassInfo">
+        客户端密码
+      </button>
+      <button v-if="isAdmin" class="w-full px-3 py-2 text-left text-xs text-ink-700 hover:bg-sand-100" @click="openTransfer(menuMailbox)">
+        转移邮箱
+      </button>
+      <button class="w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50" @click="removeMailbox(menuMailbox)">
+        注销邮箱
+      </button>
     </div>
 
     <!-- 修改显示名称 -->
