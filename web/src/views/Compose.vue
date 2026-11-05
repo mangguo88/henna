@@ -37,6 +37,13 @@ onMounted(async () => {
       subject.value = String(route.query.subject ?? '');
       body.value = String(route.query.body ?? '');
       toast('已载入草稿');
+    } else if (route.query.to || route.query.subject || route.query.body) {
+      // 从详情页点「回复 / 转发」跳转过来：带收件人、主题、正文。
+      // 引用是纯文本，切到纯文本模式，换行才不会丢；想用 HTML 再点上面的切换。
+      if (route.query.to) to.value = String(route.query.to);
+      if (route.query.subject) subject.value = String(route.query.subject);
+      if (route.query.body) body.value = String(route.query.body);
+      mode.value = 'text';
     }
   } catch (e) {
     toast((e as Error).message, 'err');
