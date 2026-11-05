@@ -378,12 +378,12 @@ const paths: Record<string, string> = {
       @pointerdown="startSidebarDrag"
     >
       <button
-        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        class="absolute left-1/2 top-1/2 z-10 grid h-4 w-4 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:border-henna-200 hover:bg-henna-50 hover:text-henna-700"
         :title="collapsed ? '展开侧栏' : '收起侧栏'"
         @click.stop="toggleSidebar"
         @pointerdown.stop
       >
-        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+        <svg viewBox="0 0 24 24" class="h-2.5 w-2.5" fill="none" stroke="currentColor" stroke-width="2.5">
           <path :d="collapsed ? paths.expand : paths.collapse" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
