@@ -78,6 +78,8 @@ export interface MailItem {
   subject: string;
   is_read: number;
   is_star: number;
+  /** 垃圾邮件标记（1 = 在垃圾邮件里） */
+  is_spam?: number;
   size: number;
   created_at: number;
   /** 列表接口返回的正文摘要：正文前 10 个字（HTML 已剥离），无正文时为空串 */
@@ -95,9 +97,18 @@ export interface Address {
   user_id: number;
   address: string;
   domain: string;
+  /** 侧栏列表里显示的名字，没填就显示地址本身 */
+  display_name?: string | null;
   enabled: number;
   created_at: number;
   owner?: string;
+}
+
+/** 转移邮箱时选目标用户 */
+export interface UserLite {
+  id: number;
+  email: string;
+  role: string;
 }
 export interface ProviderItem {
   id: number;
