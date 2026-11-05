@@ -100,13 +100,13 @@ const emptyText = computed(() => {
 
 /**
  * 列表栏宽：默认 280px（比原来的 320px 再窄一点），拖右侧分界线可改，
- * 240~520px 之间，记在本地。手机端不生效，列表仍占满屏。
+ * 150~520px 之间，最小 150px 刚好露出「收件箱」，记在本地。手机端不生效，列表仍占满屏。
  */
 const LIST_WIDTH_KEY = 'henna.list.width';
 const clampListPx = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 function readListWidth() {
   const v = Number(localStorage.getItem(LIST_WIDTH_KEY));
-  return Number.isFinite(v) && v > 0 ? clampListPx(v, 240, 520) : 280;
+  return Number.isFinite(v) && v > 0 ? clampListPx(v, 150, 520) : 280;
 }
 const listWidth = ref(readListWidth());
 const isDesktop = ref(false);
@@ -115,10 +115,12 @@ function onListMqChange(e: MediaQueryListEvent) {
   isDesktop.value = e.matches;
 }
 function startListDrag(e: PointerEvent) {
+  // 列表收起时分界线只剩箭头，拖动无效，点箭头展开
+  if (listCollapsed.value) return;
   const startX = e.clientX;
   const startW = listWidth.value;
   const move = (ev: PointerEvent) => {
-    listWidth.value = clampListPx(startW + (ev.clientX - startX), 240, 520);
+    listWidth.value = clampListPx(startW + (ev.clientX - startX), 150, 520);
   };
   const up = () => {
     localStorage.setItem(LIST_WIDTH_KEY, String(listWidth.value));
@@ -128,7 +130,18 @@ function startListDrag(e: PointerEvent) {
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
 }
-const listStyle = computed(() => (isDesktop.value ? { width: `${listWidth.value}px` } : {}));
+/** 列表折叠：点分界线上的箭头收起/展开，宽度记在本地，展开恢复原来宽度 */
+const LIST_COLLAPSED_KEY = 'henna.list.collapsed';
+const listCollapsed = ref(localStorage.getItem(LIST_COLLAPSED_KEY) === '1');
+function toggleListCollapsed() {
+  listCollapsed.value = !listCollapsed.value;
+  localStorage.setItem(LIST_COLLAPSED_KEY, listCollapsed.value ? '1' : '0');
+}
+const listStyle = computed(() => {
+  if (!isDesktop.value) return {};
+  if (listCollapsed.value) return { width: '0px' };
+  return { width: `${listWidth.value}px` };
+});
 
 onMounted(() => {
   listMq = window.matchMedia('(min-width: 768px)');
@@ -144,7 +157,7 @@ onMounted(load);
 <template>
   <div class="flex h-full">
     <!-- 列表 -->
-    <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :style="listStyle">
+    <section class="flex w-full flex-col md:shrink-0 md:border-r md:border-sand-200" :class="listCollapsed ? 'overflow-hidden' : ''" :style="listStyle">
       <!-- 表头分两行：第一行页签+星标，第二行搜索框独占一行；
            原来三样挤在一行时列表里搜索框会被压窄、占位文字溢出到框外 -->
       <div class="border-b border-sand-200 bg-white px-4 py-3">
@@ -216,13 +229,24 @@ onMounted(load);
     </section>
 
     <!-- 详情 -->
-    <!-- 列表与详情之间的可拖分界线：拖动改列表宽度（仅桌面端） -->
+    <!-- 列表与详情之间的分界线：拖动改列表宽度，点中间的箭头收起/展开列表（仅桌面端；收起后箭头还留在这里，点一下就展开） -->
     <div
       v-if="isDesktop"
-      class="hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
+      class="relative hidden w-[5px] shrink-0 cursor-col-resize touch-none bg-sand-200 transition-colors hover:bg-henna-400 active:bg-henna-500 md:block"
       title="拖动调整列表宽度"
       @pointerdown="startListDrag"
-    ></div>
+    >
+      <button
+        class="absolute left-1/2 top-1/2 z-10 grid h-5 w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full border border-sand-300 bg-white text-ink-500 shadow-sm hover:bg-sand-100 hover:text-ink-900"
+        :title="listCollapsed ? '展开列表' : '收起列表'"
+        @click.stop="toggleListCollapsed"
+        @pointerdown.stop
+      >
+        <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path :d="listCollapsed ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
     <section class="hidden min-w-0 flex-1 flex-col md:flex">
       <div v-if="!detail" class="grid flex-1 place-items-center text-sm text-ink-500">
         选择一封邮件查看内容
